@@ -1,15 +1,10 @@
 module private_threads::private_threads;
 
-use sui::object::{Self, UID, ID};
-use sui::tx_context::{Self, TxContext};
-use sui::transfer;
 use sui::event;
 use std::string::{Self, String};
-use std::vector;
-use std::option::{Self, Option};
 
 /// User profile object containing public information
-struct UserProfile has key, store {
+public struct UserProfile has key, store {
     id: UID,
     owner: address,
     username: String,
@@ -20,7 +15,7 @@ struct UserProfile has key, store {
 }
 
 /// Encrypted post metadata stored on-chain
-struct EncryptedPost has key, store {
+public struct EncryptedPost has key, store {
     id: UID,
     author: address,
     walrus_blob_id: String,
@@ -33,14 +28,14 @@ struct EncryptedPost has key, store {
 }
 
 /// Follower list for a user (owned by user)
-struct FollowerList has key {
+public struct FollowerList has key {
     id: UID,
     owner: address,
     followers: vector<address>,
 }
 
 /// Access key reference for additional per-user SEAL decryption
-struct AccessKey has key, store {
+public struct AccessKey has key, store {
     id: UID,
     owner: address,
     post_id: ID,
@@ -49,13 +44,13 @@ struct AccessKey has key, store {
 
 // ── Events ──────────────────────────────────────────────────────────────────
 
-struct ProfileCreated has copy, drop {
+public struct ProfileCreated has copy, drop {
     profile_id: ID,
     owner: address,
     username: String,
 }
 
-struct PostCreated has copy, drop {
+public struct PostCreated has copy, drop {
     post_id: ID,
     author: address,
     walrus_blob_id: String,
@@ -63,17 +58,17 @@ struct PostCreated has copy, drop {
     created_at: u64,
 }
 
-struct FollowerListCreated has copy, drop {
+public struct FollowerListCreated has copy, drop {
     list_id: ID,
     owner: address,
 }
 
-struct FollowEvent has copy, drop {
+public struct FollowEvent has copy, drop {
     follower: address,
     following: address,
 }
 
-struct UnfollowEvent has copy, drop {
+public struct UnfollowEvent has copy, drop {
     follower: address,
     unfollowing: address,
 }
@@ -93,14 +88,14 @@ public entry fun create_profile(
     bio: vector<u8>,
     ctx: &mut TxContext
 ) {
-    let sender = tx_context::sender(ctx);
+    let sender = ctx.sender();
 
     let profile = UserProfile {
         id: object::new(ctx),
         owner: sender,
         username: string::utf8(username),
         bio: string::utf8(bio),
-        created_at: tx_context::epoch_timestamp_ms(ctx),
+        created_at: ctx.epoch_timestamp_ms(),
         follower_count: 0,
         following_count: 0,
     };
@@ -128,7 +123,7 @@ public entry fun create_post(
     token_type: vector<u8>,
     ctx: &mut TxContext
 ) {
-    let sender = tx_context::sender(ctx);
+    let sender = ctx.sender();
 
     let post = EncryptedPost {
         id: object::new(ctx),
@@ -137,9 +132,9 @@ public entry fun create_post(
         seal_id,
         seal_encrypted_key,
         content_type: string::utf8(content_type),
-        created_at: tx_context::epoch_timestamp_ms(ctx),
+        created_at: ctx.epoch_timestamp_ms(),
         is_token_gated,
-        token_type: if (vector::length(&token_type) == 0) {
+        token_type: if (token_type.length() == 0) {
             option::none()
         } else {
             option::some(string::utf8(token_type))
@@ -154,18 +149,18 @@ public entry fun create_post(
         author: sender,
         walrus_blob_id: string::utf8(walrus_blob_id),
         content_type: string::utf8(content_type),
-        created_at: tx_context::epoch_timestamp_ms(ctx),
+        created_at: ctx.epoch_timestamp_ms(),
     });
 }
 
 /// Initialise a follower list for the caller (owned object).
 public entry fun init_follower_list(ctx: &mut TxContext) {
-    let sender = tx_context::sender(ctx);
+    let sender = ctx.sender();
 
     let follower_list = FollowerList {
         id: object::new(ctx),
         owner: sender,
-        followers: vector::empty(),
+        followers: vector[],
     };
 
     let list_id = object::id(&follower_list);
@@ -182,16 +177,16 @@ public entry fun follow(
     follower_list: &mut FollowerList,
     ctx: &mut TxContext
 ) {
-    let sender = tx_context::sender(ctx);
+    let sender = ctx.sender();
     let following = follower_list.owner;
 
     assert!(sender != following, E_NOT_AUTHORIZED);
 
-    let len = vector::length(&follower_list.followers);
+    let len = follower_list.followers.length();
     let mut i = 0;
     let mut already_following = false;
     while (i < len) {
-        if (*vector::borrow(&follower_list.followers, i) == sender) {
+        if (follower_list.followers[i] == sender) {
             already_following = true;
             break
         };
@@ -200,7 +195,7 @@ public entry fun follow(
 
     assert!(!already_following, E_ALREADY_FOLLOWING);
 
-    vector::push_back(&mut follower_list.followers, sender);
+    follower_list.followers.push_back(sender);
 
     event::emit(FollowEvent { follower: sender, following });
 }
@@ -210,16 +205,16 @@ public entry fun unfollow(
     follower_list: &mut FollowerList,
     ctx: &mut TxContext
 ) {
-    let sender = tx_context::sender(ctx);
+    let sender = ctx.sender();
     let unfollowing = follower_list.owner;
 
     assert!(sender != unfollowing, E_NOT_AUTHORIZED);
 
-    let len = vector::length(&follower_list.followers);
+    let len = follower_list.followers.length();
     let mut i = 0;
     let mut found = false;
     while (i < len) {
-        if (*vector::borrow(&follower_list.followers, i) == sender) {
+        if (follower_list.followers[i] == sender) {
             found = true;
             break
         };
@@ -228,7 +223,7 @@ public entry fun unfollow(
 
     assert!(found, E_NOT_FOLLOWING);
 
-    vector::remove(&mut follower_list.followers, i);
+    follower_list.followers.remove(i);
 
     event::emit(UnfollowEvent { follower: sender, unfollowing });
 }
@@ -245,7 +240,7 @@ public entry fun seal_approve(
     ctx: &TxContext
 ) {
     assert!(post.seal_id == id, E_INVALID_SEAL_ID);
-    assert!(post.author == tx_context::sender(ctx), E_NOT_AUTHORIZED);
+    assert!(post.author == ctx.sender(), E_NOT_AUTHORIZED);
 }
 
 /// Approve SEAL decryption for a follower of the post author.
@@ -256,7 +251,7 @@ public entry fun seal_approve_follower(
     ctx: &TxContext
 ) {
     assert!(post.seal_id == id, E_INVALID_SEAL_ID);
-    let caller = tx_context::sender(ctx);
+    let caller = ctx.sender();
     // The follower list must belong to the post author
     assert!(follower_list.owner == post.author, E_NOT_AUTHORIZED);
     assert!(is_following(follower_list, caller), E_NOT_FOLLOWING);
@@ -265,10 +260,10 @@ public entry fun seal_approve_follower(
 // ── Read-only helpers ────────────────────────────────────────────────────────
 
 public fun is_following(follower_list: &FollowerList, addr: address): bool {
-    let len = vector::length(&follower_list.followers);
+    let len = follower_list.followers.length();
     let mut i = 0;
     while (i < len) {
-        if (*vector::borrow(&follower_list.followers, i) == addr) {
+        if (follower_list.followers[i] == addr) {
             return true
         };
         i = i + 1;
