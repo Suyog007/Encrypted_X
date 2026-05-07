@@ -18,7 +18,7 @@
  */
 
 import { SealClient, SessionKey, EncryptedObject } from '@mysten/seal';
-import { SuiClient, getFullnodeUrl } from '@mysten/sui/client';
+import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc';
 import { Transaction } from '@mysten/sui/transactions';
 
 // ── Configuration ─────────────────────────────────────────────────────────────
@@ -34,9 +34,10 @@ const DECENTRALIZED_KEY_SERVER_OBJ_ID =
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function makeSuiClient(): SuiClient {
+function makeSuiClient(): SuiJsonRpcClient {
   const net = (import.meta.env.VITE_SUI_NETWORK as string) || 'testnet';
-  return new SuiClient({ url: getFullnodeUrl(net as 'testnet' | 'mainnet' | 'devnet') });
+  const network = net as 'testnet' | 'mainnet' | 'devnet';
+  return new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl(network), network });
 }
 
 let _sealClient: SealClient | null = null;

@@ -3,7 +3,7 @@
  * Uses @mysten/sui (v1.x) and is compatible with @mysten/dapp-kit.
  */
 
-import { SuiClient, getFullnodeUrl } from '@mysten/sui/client';
+import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc';
 import { Transaction } from '@mysten/sui/transactions';
 
 const PACKAGE_ID = import.meta.env.VITE_PACKAGE_ID || '0x0';
@@ -25,8 +25,9 @@ function toBytes(val: string | number[]): Uint8Array {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnySuiClient = any;
 
-export function getSuiClient(network?: 'testnet' | 'mainnet' | 'devnet'): SuiClient {
-  return new SuiClient({ url: getFullnodeUrl(network ?? NETWORK) });
+export function getSuiClient(network?: 'testnet' | 'mainnet' | 'devnet'): SuiJsonRpcClient {
+  const net = network ?? NETWORK;
+  return new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl(net), network: net });
 }
 
 // ── Type for signAndExecuteTransaction (dapp-kit) ─────────────────────────────
