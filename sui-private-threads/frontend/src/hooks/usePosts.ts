@@ -1,25 +1,23 @@
 /**
  * React hook for loading and decrypting encrypted posts.
  *
- * Decryption pipeline per post
+ * Decryption pipeline per post (SEAL v1.x):
  *   1. Check if caller is author or follower (on-chain follower list)
- *   2. Download IV-prefixed ciphertext from Walrus
- *   3. Use SEAL to recover the AES-GCM symmetric key
- *   4. Decrypt content with the symmetric key
+ *   2. Download SEAL-encrypted blob from Walrus
+ *   3. Use SEAL to decrypt content directly (key recovery + AES-GCM handled internally)
  */
 
 import { useState, useCallback, useRef } from 'react';
 import type { SessionKey } from '@mysten/seal';
 import { useSuiWallet } from './useSuiWallet';
 import { getPostsByAuthor, getFollowerListByOwner } from '../lib/sui';
-import { downloadEncryptedContent } from '../lib/walrus';
+import { downloadEncryptedBlob } from '../lib/walrus';
 import {
   createSealSessionKey,
-  decryptKeyAsAuthor,
-  decryptKeyAsFollower,
+  decryptAsAuthor,
+  decryptAsFollower,
   checkDecryptionPermission,
 } from '../lib/seal';
-import { decryptText, decryptFile } from '../lib/encryption';
 import { EncryptedPost, DecryptedPost, PostContent } from '../types';
 
 export function usePosts() {
@@ -39,7 +37,7 @@ export function usePosts() {
     if (!address || !signPersonalMessage) return null;
 
     try {
-      const key = await createSealSessionKey(address ?? undefined, signPersonalMessage);
+      const key = await createSealSessionKey(address, signPersonalMessage);
       sessionKeyRef.current = key;
       return key;
     } catch (err) {
@@ -66,27 +64,22 @@ export function usePosts() {
     if (!sessionKey) return locked;
 
     try {
-      // Download ciphertext + IV from Walrus
-      const { encrypted, iv } = await downloadEncryptedContent(
-        post.walrusBlobId,
-        '', // IV is embedded in the blob (first 12 bytes)
-      );
+      // Download SEAL-encrypted blob from Walrus
+      const encryptedData = await downloadEncryptedBlob(post.walrusBlobId);
 
-      // Recover symmetric key via SEAL
-      let symmetricKey;
+      // Decrypt using SEAL
+      let decryptedBytes: Uint8Array;
       if (permission === 'author') {
-        symmetricKey = await decryptKeyAsAuthor(
-          post.sealEncryptedKey,
-          post.sealId,
+        decryptedBytes = await decryptAsAuthor(
+          encryptedData,
           post.id,
           address,
           sessionKey,
         );
       } else {
         if (!followerListId) return locked;
-        symmetricKey = await decryptKeyAsFollower(
-          post.sealEncryptedKey,
-          post.sealId,
+        decryptedBytes = await decryptAsFollower(
+          encryptedData,
           post.id,
           followerListId,
           address,
@@ -94,14 +87,14 @@ export function usePosts() {
         );
       }
 
-      // Decrypt content
+      // Parse decrypted content
       let content: PostContent = {};
       if (post.contentType === 'text') {
-        content.text = await decryptText(encrypted, iv, symmetricKey);
+        content.text = new TextDecoder().decode(decryptedBytes);
       } else if (post.contentType === 'image') {
-        content.image = await decryptFile(encrypted, iv, symmetricKey);
+        content.image = new Blob([decryptedBytes.slice()]);
       } else if (post.contentType === 'video') {
-        content.video = await decryptFile(encrypted, iv, symmetricKey);
+        content.video = new Blob([decryptedBytes.slice()]);
       }
 
       return { ...post, content, decrypted: true };
@@ -124,8 +117,6 @@ export function usePosts() {
       const rawPosts = await getPostsByAuthor(client, authorAddress ?? '');
 
       // Fetch follower lists for permission checks.
-      // When viewing a specific author, fetch their follower list.
-      // For the global feed, we need to check per-post, so we build a cache.
       let followerList:   string[] = [];
       let followerListId: string | null = null;
       const followerListCache = new Map<string, { followers: string[]; id: string } | null>();

@@ -2,24 +2,18 @@
  * PostComposer – create new encrypted posts.
  *
  * Full pipeline:
- *   1. Generate AES-256-GCM symmetric key
- *   2. Encrypt content (text / image / video)
- *   3. Upload IV-prepended ciphertext to Walrus
- *   4. Generate random 32-byte sealId
- *   5. Encrypt symmetric key with SEAL (threshold encryption)
- *   6. Persist (walrus_blob_id, seal_id, seal_encrypted_key) on Sui chain
+ *   1. Prepare content bytes (text / image / video)
+ *   2. Generate a SEAL identity (hex of packageId bytes + random nonce)
+ *   3. Encrypt content with SEAL (threshold encryption via key servers)
+ *   4. Upload SEAL-encrypted blob to Walrus
+ *   5. Store (walrus_blob_id, seal_id, seal_encrypted_key) on Sui chain
  */
 
 import React, { useState } from 'react';
 import { Image, Video, X, Loader2, Lock } from 'lucide-react';
 import { useSuiWallet } from '../hooks/useSuiWallet';
-import {
-  generateSymmetricKey,
-  encryptText,
-  encryptFile,
-} from '../lib/encryption';
-import { uploadEncryptedContent } from '../lib/walrus';
-import { encryptKeyWithSeal, createSealSessionKey } from '../lib/seal';
+import { encryptWithSeal, bytesToHex } from '../lib/seal';
+import { uploadEncryptedBlob } from '../lib/walrus';
 import { createPost } from '../lib/sui';
 
 interface PostComposerProps {
@@ -27,7 +21,7 @@ interface PostComposerProps {
 }
 
 export function PostComposer({ onPostCreated }: PostComposerProps) {
-  const { address, signAndExecuteTransaction, signPersonalMessage } = useSuiWallet();
+  const { address, signAndExecuteTransaction } = useSuiWallet();
 
   const [text,         setText]         = useState('');
   const [file,         setFile]         = useState<File | null>(null);
@@ -48,7 +42,7 @@ export function PostComposer({ onPostCreated }: PostComposerProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!address || !signAndExecuteTransaction || !signPersonalMessage) {
+    if (!address || !signAndExecuteTransaction) {
       setError('Please connect your wallet');
       return;
     }
@@ -61,43 +55,41 @@ export function PostComposer({ onPostCreated }: PostComposerProps) {
     setError(null);
 
     try {
-      // 1. Generate AES-256-GCM key
-      setStatusMsg('Generating encryption key…');
-      const symmetricKey = await generateSymmetricKey();
-
-      // 2. Encrypt content
-      setStatusMsg('Encrypting content…');
-      let encrypted: Uint8Array;
-      let iv: Uint8Array;
-
+      // 1. Prepare content
+      setStatusMsg('Preparing content…');
+      let contentBytes: Uint8Array;
       if (contentType === 'text') {
-        ({ encrypted, iv } = await encryptText(text, symmetricKey));
+        contentBytes = new TextEncoder().encode(text);
       } else if (file) {
-        ({ encrypted, iv } = await encryptFile(file, symmetricKey));
+        contentBytes = new Uint8Array(await file.arrayBuffer());
       } else {
         throw new Error('No content to encrypt');
       }
 
-      // 3. Upload to Walrus
+      // 2. Generate SEAL identity (random 37 bytes: 32-byte package prefix + 5-byte nonce)
+      const nonce = crypto.getRandomValues(new Uint8Array(5));
+      const packageId = import.meta.env.VITE_PACKAGE_ID as string;
+      const packageBytes = hexToBytes(packageId);
+      const sealIdBytes = new Uint8Array([...packageBytes, ...nonce]);
+      const sealIdHex = bytesToHex(sealIdBytes);
+
+      // 3. Encrypt with SEAL
+      setStatusMsg('Encrypting with SEAL…');
+      const encryptedBytes = await encryptWithSeal(contentBytes, sealIdHex);
+
+      // 4. Upload encrypted blob to Walrus
       setStatusMsg('Uploading to Walrus…');
-      const { blobId } = await uploadEncryptedContent(encrypted, iv, contentType);
+      const blobId = await uploadEncryptedBlob(encryptedBytes);
 
-      // 4. Generate SEAL namespace id (32 random bytes)
-      const sealId = crypto.getRandomValues(new Uint8Array(32));
-
-      // 5. Encrypt symmetric key with SEAL
-      // The session key is only needed for decryption; encryption uses IBE public keys from key servers.
-      setStatusMsg('Encrypting key with SEAL…');
-      await createSealSessionKey(address, signPersonalMessage); // validates SEAL config is ready
-      const sealEncryptedKey = await encryptKeyWithSeal(symmetricKey, sealId);
-
-      // 6. Create on-chain post
+      // 5. Create on-chain post
+      // We store the sealIdBytes on-chain as seal_id and the encrypted blob as seal_encrypted_key
+      // (seal_encrypted_key is kept for schema compat but now holds empty bytes)
       setStatusMsg('Publishing on Sui…');
       await createPost(
         signAndExecuteTransaction,
         blobId,
-        sealId,
-        sealEncryptedKey,
+        sealIdBytes,
+        new Uint8Array(0), // seal_encrypted_key no longer needed — SEAL encrypts content directly
         contentType,
         isTokenGated,
         tokenType || undefined,
@@ -218,4 +210,13 @@ export function PostComposer({ onPostCreated }: PostComposerProps) {
       </form>
     </div>
   );
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const raw = hex.startsWith('0x') ? hex.slice(2) : hex;
+  const bytes = new Uint8Array(raw.length / 2);
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = parseInt(raw.substring(i * 2, i * 2 + 2), 16);
+  }
+  return bytes;
 }

@@ -94,7 +94,30 @@ export async function downloadFromWalrus(
   return new Uint8Array(buffer);
 }
 
-// ── Encrypted-content helpers ────────────────────────────────────────────────
+// ── SEAL blob helpers ───────────────────────────────────────────────────────
+
+/**
+ * Upload a SEAL-encrypted blob to Walrus. Returns the blobId.
+ */
+export async function uploadEncryptedBlob(
+  encryptedBytes: Uint8Array,
+  config?: WalrusConfig,
+): Promise<string> {
+  const { blobId } = await uploadToWalrus(encryptedBytes, config);
+  return blobId;
+}
+
+/**
+ * Download a SEAL-encrypted blob from Walrus.
+ */
+export async function downloadEncryptedBlob(
+  blobId: string,
+  config?: WalrusConfig,
+): Promise<Uint8Array> {
+  return downloadFromWalrus(blobId, config);
+}
+
+// ── Legacy encrypted-content helpers ────────────────────────────────────────
 
 /**
  * Combine IV + ciphertext and upload to Walrus.
