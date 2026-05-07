@@ -9,6 +9,17 @@ import { Transaction } from '@mysten/sui/transactions';
 const PACKAGE_ID = import.meta.env.VITE_PACKAGE_ID || '0x0';
 const NETWORK    = (import.meta.env.VITE_SUI_NETWORK as 'testnet' | 'mainnet' | 'devnet') || 'testnet';
 
+/** Decode a base64 string or number[] to Uint8Array (Sui returns vector<u8> as base64). */
+function toBytes(val: string | number[]): Uint8Array {
+  if (typeof val === 'string') {
+    const binary = atob(val);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+  return new Uint8Array(val);
+}
+
 // ── Client factory ────────────────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -244,8 +255,8 @@ export async function getPostsByAuthor(
           id:               postId,
           author:           f.author as string,
           walrusBlobId:     f.walrus_blob_id as string,
-          sealId:           new Uint8Array(f.seal_id as number[]),
-          sealEncryptedKey: new Uint8Array(f.seal_encrypted_key as number[]),
+          sealId:           toBytes(f.seal_id),
+          sealEncryptedKey: toBytes(f.seal_encrypted_key),
           contentType:      f.content_type as 'text' | 'image' | 'video',
           createdAt:        Number(f.created_at),
           isTokenGated:     Boolean(f.is_token_gated),
@@ -282,8 +293,8 @@ export async function getEncryptedPost(
       id:               postId,
       author:           f.author as string,
       walrusBlobId:     f.walrus_blob_id as string,
-      sealId:           new Uint8Array(f.seal_id as number[]),
-      sealEncryptedKey: new Uint8Array(f.seal_encrypted_key as number[]),
+      sealId:           toBytes(f.seal_id),
+      sealEncryptedKey: toBytes(f.seal_encrypted_key),
       contentType:      f.content_type as 'text' | 'image' | 'video',
       createdAt:        Number(f.created_at),
       isTokenGated:     Boolean(f.is_token_gated),
