@@ -29,7 +29,7 @@ export function Profile({ address: profileAddress }: ProfileProps) {
     signAndExecuteTransaction,
   } = useSuiWallet();
 
-  const { posts, loading: postsLoading, loadPosts, decryptPost } = usePosts();
+  const { posts, loading: postsLoading, loadPosts } = usePosts();
 
   const [profile,          setProfile]          = useState<UserProfile | null>(null);
   const [followerListId,   setFollowerListId]   = useState<string | null>(null);

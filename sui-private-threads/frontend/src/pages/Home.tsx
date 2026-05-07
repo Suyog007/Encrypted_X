@@ -11,7 +11,7 @@ import { Loader2, RefreshCw } from 'lucide-react';
 
 export function Home() {
   const { address, isConnected } = useSuiWallet();
-  const { posts, loading, error, loadPosts, decryptPost } = usePosts();
+  const { posts, loading, error, loadPosts } = usePosts();
 
   useEffect(() => {
     if (isConnected && address) {
