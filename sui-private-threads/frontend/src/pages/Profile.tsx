@@ -29,7 +29,7 @@ export function Profile({ address: profileAddress }: ProfileProps) {
     signAndExecuteTransaction,
   } = useSuiWallet();
 
-  const { posts, loading: postsLoading, loadPosts } = usePosts();
+  const { posts, loading: postsLoading, loadPosts, decryptPost } = usePosts();
 
   const [profile,          setProfile]          = useState<UserProfile | null>(null);
   const [followerListId,   setFollowerListId]   = useState<string | null>(null);
@@ -255,7 +255,13 @@ export function Profile({ address: profileAddress }: ProfileProps) {
               <p className="text-gray-600">No posts yet.</p>
             </div>
           ) : (
-            posts.map((post) => <PostCard key={post.id} post={post} />)
+            posts.map((post) => (
+              <PostCard
+                key={post.id}
+                post={post}
+                onDecrypt={!post.decrypted ? () => loadPosts(address) : undefined}
+              />
+            ))
           )}
         </div>
 
