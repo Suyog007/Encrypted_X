@@ -2,6 +2,12 @@
 
 An end-to-end encrypted social feed built on the Sui blockchain. Users post text, images, and videos that are encrypted client-side before storage — only the author and approved followers can decrypt them.
 
+## Screenshots
+
+| Create Encrypted Post | Encrypted Post | Decrypted Post |
+|:---:|:---:|:---:|
+| ![Create Encrypted Post](assets/compose.png) | ![Encrypted Post](assets/encrypted.png) | ![Decrypted Post](assets/decrypted.png) |
+
 ---
 
 ## How It Works
