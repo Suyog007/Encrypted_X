@@ -11,7 +11,7 @@ import { Loader2, RefreshCw } from 'lucide-react';
 
 export function Home() {
   const { address, isConnected } = useSuiWallet();
-  const { posts, loading, error, loadPosts } = usePosts();
+  const { posts, loading, error, loadPosts, decryptPost } = usePosts();
 
   useEffect(() => {
     if (isConnected && address) {
@@ -73,7 +73,13 @@ export function Home() {
             </div>
           )}
 
-          {posts.map((post) => <PostCard key={post.id} post={post} />)}
+          {posts.map((post) => (
+            <PostCard
+              key={post.id}
+              post={post}
+              onDecrypt={!post.decrypted ? () => loadPosts() : undefined}
+            />
+          ))}
         </div>
 
       </div>

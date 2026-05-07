@@ -123,9 +123,12 @@ export function usePosts() {
       // Fetch raw post data from chain via PostCreated events
       const rawPosts = await getPostsByAuthor(client, authorAddress ?? '');
 
-      // Fetch the follower list for the profile being viewed (for permission checks)
+      // Fetch follower lists for permission checks.
+      // When viewing a specific author, fetch their follower list.
+      // For the global feed, we need to check per-post, so we build a cache.
       let followerList:   string[] = [];
       let followerListId: string | null = null;
+      const followerListCache = new Map<string, { followers: string[]; id: string } | null>();
 
       if (authorAddress) {
         const fl = await getFollowerListByOwner(client, authorAddress);
@@ -150,7 +153,22 @@ export function usePosts() {
 
       // Decrypt posts the user has access to
       const decryptedPosts = await Promise.all(
-        encryptedPosts.map((post) => decryptPost(post, followerList, followerListId)),
+        encryptedPosts.map(async (post) => {
+          // For global feed (no authorAddress), resolve follower list per post author
+          let fl = followerList;
+          let flId = followerListId;
+          if (!authorAddress && post.author !== address) {
+            if (!followerListCache.has(post.author)) {
+              followerListCache.set(post.author, await getFollowerListByOwner(client, post.author));
+            }
+            const cached = followerListCache.get(post.author);
+            if (cached) {
+              fl = cached.followers;
+              flId = cached.id;
+            }
+          }
+          return decryptPost(post, fl, flId);
+        }),
       );
 
       setPosts(decryptedPosts);
